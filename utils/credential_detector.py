@@ -164,9 +164,18 @@ class CredentialDetector:
         
         # Verificaciones adicionales por tipo
         if credential_type == 'password':
-            # Si es muy corta o tiene patrones obvios de ejemplo
-            if len(match_text) < 8 or 'password' in match_lower:
-                return True
+            # Intentar extraer solo el valor de la contraseña (después del separador)
+            # Ejemplo: "password": "valor" -> extrae "valor"
+            value_match = re.search(r'[:=\s\'"]+([^\s\'"{}[\],;]+)', match_text)
+            if value_match:
+                value = value_match.group(1).lower()
+                # Si el valor en sí es muy corto o es una palabra de ejemplo
+                if len(value) < 4 or value in ['password', 'passwd', 'mypassword', 'yourpassword', 'contraseña', 'secret', 'xxxx', '****']:
+                    return True
+            else:
+                # Si no se puede extraer el valor, aplicamos lógica básica sobre el texto completo
+                if len(match_text) < 8:
+                    return True
         
         return False
     
