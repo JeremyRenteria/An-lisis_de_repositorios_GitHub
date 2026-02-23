@@ -1,9 +1,11 @@
-#!/usr/bin/env python3
-"""
-Script para inicializar la base de datos y crear el schema
-"""
+import sys
+import os
 import psycopg2
 from psycopg2 import sql
+
+# Agregar el directorio raiz al path para poder importar config
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from config.config import DB_CONFIG
 
 def init_database():
     """Inicializa la base de datos y crea el schema"""
@@ -16,11 +18,11 @@ def init_database():
         # Primero conectar al servidor para crear la DB si no existe
         print("Conectando a PostgreSQL...")
         conn = psycopg2.connect(
-            host='localhost',
-            port=5432,
-            user='postgres',
-            password='grado123',
-            database='postgres'
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            database='postgres' # Nos conectamos a postgres para poder crear la otra DB
         )
         conn.autocommit = True
         cursor = conn.cursor()
@@ -42,11 +44,11 @@ def init_database():
         # Ahora conectar a la BD y ejecutar el schema
         print("Conectando a la base de datos github_analyzer...")
         conn = psycopg2.connect(
-            host='localhost',
-            port=5432,
-            user='postgres',
-            password='grado123',
-            database='github_analyzer'
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            database=DB_CONFIG['database']
         )
         conn.autocommit = True
         cursor = conn.cursor()
