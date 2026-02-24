@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env si existe
+
 load_dotenv()
 
 # Configuracion de Base de Datos PostgreSQL
@@ -14,6 +14,7 @@ DB_CONFIG = {
 }
 
 # Configuracion de GitHub API
+# NOTE: do not hardcode the token. Store it in an environment variable or .env file.
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 
 # Configuracion de Machine Learning
@@ -32,10 +33,10 @@ CREDENTIAL_PATTERNS = {
     'github_token': r'gh[pousr]_[0-9a-zA-Z]{36}',
     'github_pat': r'github_pat_[0-9a-zA-Z_]{82}',
     'github_oauth': r'gho_[0-9a-zA-Z]{36}',
-    'db_password': r'(?:password|passwd|pwd|db_pass|db_password)[\'"\s:=]+[^\s\'"]{6,}',
-    'password': r'password[\'"\s:=]+[^\s\'"]{6,}',
-    'db_user': r'(?:user|username|db_user)[\'"\s:=]+[^\s\'"]{4,}',
-    'connection_string': r'(?:mongodb|mysql|postgresql|sqlserver|postgres|mssql|oracle|sqlite):\/\/[^\s\'"]+',
+    'db_password': r'(?:password|passwd|pwd|db_pass|db_password)[\'"\s:=]+[^\s\'"{}[\],;]{8,}',
+    'password': r'password[\'"\s:=]+[^\s\'"{}[\],;]{8,}',
+    'db_user': r'(?:db_user|db_username|database_user)[\'"\s:=]+[\'"][^\s\'"]{5,}[\'"]',
+    'connection_string': r'(?:mongodb|mysql|postgresql|sqlserver|postgres|mssql|oracle|sqlite):\/\/[^\s\'"{}]+:[^\s\'"{}]+@[^\s\'"]+',
     'generic_api_key': r'api[_-]?key[\'"\s:=]+[0-9a-zA-Z]{12,}',
     'generic_secret': r'secret[\'"\s:=]+[0-9a-zA-Z]{12,}',
     'private_key': r'-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----',

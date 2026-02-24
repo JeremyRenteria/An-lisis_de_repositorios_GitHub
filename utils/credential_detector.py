@@ -59,7 +59,7 @@ class CredentialDetector:
                 matches = pattern.finditer(line)
                 for match in matches:
                     # Evitar falsos positivos comunes
-                    if not self._is_false_positive(match.group(), credential_type):
+                    if not self._is_false_positive(match.group(), credential_type, file_path):
                         detections.append({
                             'type': credential_type,
                             'file_path': file_path,
@@ -92,7 +92,7 @@ class CredentialDetector:
                 for credential_type, pattern in self.compiled_patterns.items():
                     matches = pattern.finditer(clean_line)
                     for match in matches:
-                        if not self._is_false_positive(match.group(), credential_type):
+                        if not self._is_false_positive(match.group(), credential_type, file_path):
                             detections.append({
                                 'type': credential_type,
                                 'file_path': file_path,
@@ -129,13 +129,14 @@ class CredentialDetector:
         file_path_lower = file_path.lower()
         return any(sensitive in file_path_lower for sensitive in self.sensitive_files)
     
-    def _is_false_positive(self, match_text, credential_type):
+    def _is_false_positive(self, match_text, credential_type, file_path=''):
         """
         Determina si una coincidencia es un falso positivo
         
         Args:
             match_text (str): Texto que coincidió
             credential_type (str): Tipo de credencial
+            file_path (str): Ruta del archivo
             
         Returns:
             bool: True si es falso positivo
@@ -154,12 +155,44 @@ class CredentialDetector:
             r'<.*>',  # Placeholders en XML/HTML
             r'\$\{.*\}',  # Variables de entorno
             r'\{\{.*\}\}',  # Plantillas
+            r'db_user',  # Nombre de la variable
+            r'db_password',
+            r'config\.',
+            r'os\.environ',
+            r'getenv',
+            r'YOUR[_-]?[A-Z0-9]+', # Ej: YOUR_API_KEY
+            r'<[A-Z0-9_]+>',      # Ej: <TOKEN>
+            r'\[[A-Z0-9_]+\]',    # Ej: [PASSWORD]
+            r'example[_-]?user',
+            r'example[_-]?password',
+            r'localhost',
+            r'127\.0\.0\.1',
+            r'mongodb\+srv',      # A menudo usado en ejemplos de Atlas
         ]
         
         match_lower = match_text.lower()
         
         for fp_pattern in false_positive_patterns:
             if re.search(fp_pattern, match_lower):
+                return True
+        
+        # Ignorar si parece una llamada a función (ej. get_password(), os.getenv())
+        if re.search(r'\(.*\)', match_text):
+            return True
+            
+        # Ignorar si parece una asignación de variable sin valor literal (ej. pass = my_var)
+        # pero permitir si tiene comillas (ej. pass = "secret123")
+        if (credential_type in ['password', 'db_password', 'db_user']) and not re.search(r'[\'"]', match_text):
+            return True
+
+        # Si el archivo es una documentación (.md), ser mucho más estricto
+        if file_path.lower().endswith('.md'):
+            # Ignorar si parece un ejemplo de URL con placeholders comunes
+            if re.search(r'[:=].*([<\[{]|YOUR_|EXAMPLE)', match_text, re.IGNORECASE):
+                return True
+            # Ignorar si el valor parece una descripción de tipo y no un valor real
+            if re.search(r'string|key|token|password|mypassword|admin|root', match_text, re.IGNORECASE) and len(match_text.split(':')[-1].strip()) < 15:
+                # Si en un README dice "password: root", es casi seguro un ejemplo
                 return True
         
         # Verificaciones adicionales por tipo
@@ -170,7 +203,7 @@ class CredentialDetector:
             if value_match:
                 value = value_match.group(1).lower()
                 # Si el valor en sí es muy corto o es una palabra de ejemplo
-                if len(value) < 4 or value in ['password', 'passwd', 'mypassword', 'yourpassword', 'contraseña', 'secret', 'xxxx', '****']:
+                if len(value) < 6 or value in ['password', 'passwd', 'mypassword', 'yourpassword', 'contraseña', 'secret', 'xxxx', '****', 'admin', 'root']:
                     return True
             else:
                 # Si no se puede extraer el valor, aplicamos lógica básica sobre el texto completo
