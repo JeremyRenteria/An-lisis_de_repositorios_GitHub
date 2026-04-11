@@ -10,7 +10,7 @@ DB_CONFIG = {
     'port': int(os.getenv('DB_PORT', 5432)),
     'database': os.getenv('DB_NAME', 'github_analyzer'),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'micontraseña123C')
+    'password': os.getenv('DB_PASSWORD', 'hola')
 }
 
 # Configuracion de GitHub API
