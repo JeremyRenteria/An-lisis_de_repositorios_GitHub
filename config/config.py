@@ -11,9 +11,8 @@ DB_CONFIG = {
     'database': os.getenv('DB_NAME', 'github_analyzer'),
     'user': os.getenv('DB_USER', 'postgres'),
     'password': os.getenv('DB_PASSWORD', "miContraseña123")
-    password=miContraseña123
 }
-
+password=miContraseña123
 # Configuracion de GitHub API
 # NOTE: do not hardcode the token. Store it in an environment variable or .env file.
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
