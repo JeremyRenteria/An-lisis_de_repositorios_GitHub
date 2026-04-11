@@ -10,12 +10,12 @@ DB_CONFIG = {
     'port': int(os.getenv('DB_PORT', 5432)),
     'database': os.getenv('DB_NAME', 'github_analyzer'),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', '')
+    'password': os.getenv('DB_PASSWORD', 'hola1234')
 }
 
 # Configuracion de GitHub API
 # NOTE: do not hardcode the token. Store it in an environment variable or .env file.
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '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')
 
 # Configuracion de Machine Learning
 ML_CONFIG = {
