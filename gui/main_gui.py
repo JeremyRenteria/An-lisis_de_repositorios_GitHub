@@ -390,7 +390,8 @@ class GitHubAnalyzerGUI:
 
         try:
             data = db_manager.get_temporal_trend_data(days=days)
-            self.render_trend_chart(data, days)
+            actual_days = data.get('actual_days', days)
+            self.render_trend_chart(data, actual_days)
         except Exception as e:
             for w in self.trend_chart_frame.winfo_children():
                 w.destroy()
@@ -405,14 +406,17 @@ class GitHubAnalyzerGUI:
 
         Args:
             data: dict retornado por db_manager.get_temporal_trend_data()
-            days: ventana de días seleccionada (para el título)
+            days: ventana de días real usada (puede diferir de la selección si datos son históricos)
         """
         import matplotlib.dates as mdates
-        from matplotlib.lines import Line2D
 
         df_threats    = data['threats_per_day']
         df_suspicious = data['suspicious_per_week']
         df_risk       = data['risk_evolution']
+        date_range    = data.get('date_range', {})
+        dr_min        = date_range.get('min_date', '—')
+        dr_max        = date_range.get('max_date', '—')
+        period_label  = f"{dr_min} → {dr_max}" if dr_min != '—' else f"últimos {days} días"
 
         # Actualizar KPIs de resumen
         total_amenazas  = int(df_threats['total_amenazas'].sum())  if not df_threats.empty    else 0
@@ -488,7 +492,7 @@ class GitHubAnalyzerGUI:
                         ha='center', va='center', transform=ax.transAxes,
                         color=self.colors['text'], fontsize=11)
 
-            ax.set_title(f'Amenazas detectadas por día  (últimos {days} días)',
+            ax.set_title(f'Amenazas detectadas por día  [{period_label}]',
                          color=self.colors['accent'], fontsize=11, fontweight='bold', pad=10)
             ax.set_ylabel('Nº amenazas', fontsize=9)
             ax.legend(loc='upper left', fontsize=8,
@@ -519,7 +523,7 @@ class GitHubAnalyzerGUI:
                         ha='center', va='center', transform=ax.transAxes,
                         color=self.colors['text'], fontsize=11)
 
-            ax.set_title(f'Commits sospechosos por semana  (últimos {days} días)',
+            ax.set_title(f'Commits sospechosos por semana  [{period_label}]',
                          color=self.colors['accent'], fontsize=11, fontweight='bold', pad=10)
             ax.set_ylabel('Nº commits', fontsize=9)
             ax.legend(loc='upper left', fontsize=8,
@@ -557,7 +561,7 @@ class GitHubAnalyzerGUI:
                         ha='center', va='center', transform=ax.transAxes,
                         color=self.colors['text'], fontsize=11)
 
-            ax.set_title(f'Evolución del riesgo  (últimos {days} días)',
+            ax.set_title(f'Evolución del riesgo  [{period_label}]',
                          color=self.colors['accent'], fontsize=11, fontweight='bold', pad=10)
             ax.set_ylabel('Risk Score (0–1)', fontsize=9)
             ax.legend(loc='upper left', fontsize=8,
@@ -573,7 +577,7 @@ class GitHubAnalyzerGUI:
         canvas.get_tk_widget().pack(fill='both', expand=True)
         plt.close(fig)
 
-        self.update_status(f"Tendencias actualizadas — últimos {days} días")
+        self.update_status(f"Tendencias actualizadas — {period_label}")
 
     def create_ml_screen(self):
         """Crea la pantalla de Inteligencia Artificial"""
