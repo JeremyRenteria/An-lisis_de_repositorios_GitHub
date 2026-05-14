@@ -356,6 +356,75 @@ class DatabaseManager:
             self.return_connection(connection)
 
     # --------------------------------------------------
+    # TENDENCIAS TEMPORALES
+    # --------------------------------------------------
+
+    def get_temporal_trend_data(self, days: int = 30):
+        """
+        Retorna tres DataFrames para la gráfica de tendencia temporal:
+          1. threats_per_day    – amenazas (credenciales) detectadas por día
+          2. suspicious_per_week– commits sospechosos (has_credentials=true) por semana
+          3. risk_evolution     – risk_score promedio por día
+
+        Args:
+            days: Ventana de tiempo hacia atrás (default 30 días).
+
+        Returns:
+            dict con claves 'threats_per_day', 'suspicious_per_week', 'risk_evolution'
+        """
+        connection = self.get_connection()
+        try:
+            # 1. Amenazas detectadas por día
+            q_threats = """
+                SELECT
+                    DATE(cd.detection_date)   AS fecha,
+                    COUNT(cd.credential_id)   AS total_amenazas,
+                    SUM(CASE WHEN cd.severity = 'CRITICAL' THEN 1 ELSE 0 END) AS criticas,
+                    SUM(CASE WHEN cd.severity = 'HIGH'     THEN 1 ELSE 0 END) AS altas,
+                    SUM(CASE WHEN cd.severity = 'MEDIUM'   THEN 1 ELSE 0 END) AS medias
+                FROM credentials_detected cd
+                WHERE cd.detection_date >= NOW() - INTERVAL '%s days'
+                GROUP BY DATE(cd.detection_date)
+                ORDER BY fecha ASC
+            """
+            df_threats = pd.read_sql_query(q_threats, connection, params=(days,))
+
+            # 2. Commits sospechosos por semana
+            q_suspicious = """
+                SELECT
+                    DATE_TRUNC('week', c.commit_date)::DATE  AS semana,
+                    COUNT(*)                                  AS total_commits,
+                    SUM(CASE WHEN c.has_credentials THEN 1 ELSE 0 END) AS sospechosos
+                FROM commits c
+                WHERE c.commit_date >= NOW() - INTERVAL '%s days'
+                GROUP BY DATE_TRUNC('week', c.commit_date)
+                ORDER BY semana ASC
+            """
+            df_suspicious = pd.read_sql_query(q_suspicious, connection, params=(days,))
+
+            # 3. Evolución del riesgo promedio por día
+            q_risk = """
+                SELECT
+                    DATE(c.commit_date)   AS fecha,
+                    AVG(c.risk_score)     AS riesgo_promedio,
+                    MAX(c.risk_score)     AS riesgo_maximo
+                FROM commits c
+                WHERE c.commit_date >= NOW() - INTERVAL '%s days'
+                  AND c.risk_score IS NOT NULL
+                GROUP BY DATE(c.commit_date)
+                ORDER BY fecha ASC
+            """
+            df_risk = pd.read_sql_query(q_risk, connection, params=(days,))
+
+            return {
+                'threats_per_day':    df_threats,
+                'suspicious_per_week': df_suspicious,
+                'risk_evolution':     df_risk,
+            }
+        finally:
+            self.return_connection(connection)
+
+    # --------------------------------------------------
     # CIERRE
     # --------------------------------------------------
 

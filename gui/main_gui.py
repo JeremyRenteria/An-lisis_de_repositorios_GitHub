@@ -114,6 +114,7 @@ class GitHubAnalyzerGUI:
             ("🔍 Escáner",    "scanner"),
             ("📋 Hallazgos",  "results"),
             ("📊 Dashboard",  "stats"),
+            ("📈 Tendencias",  "trends"),
             ("🧠 Inteligencia","ml")
         ]
 
@@ -136,6 +137,7 @@ class GitHubAnalyzerGUI:
         self.create_analysis_screen()
         self.create_results_screen()
         self.create_stats_screen()
+        self.create_trends_screen()
         self.create_ml_screen()
 
         self.show_screen("scanner")
@@ -297,6 +299,281 @@ class GitHubAnalyzerGUI:
                   bg=self.colors['accent'], fg=self.colors['bg_dark'],
                   font=('Segoe UI', 10, 'bold'), bd=0, padx=20, pady=8,
                   command=self.update_statistics).pack(pady=10)
+
+    def create_trends_screen(self):
+        """
+        Pantalla de Tendencias Temporales.
+        Muestra un Line Chart con 3 series:
+          - Amenazas detectadas por día (credentials_detected)
+          - Commits sospechosos por semana
+          - Evolución del riesgo promedio
+        """
+        screen = tk.Frame(self.main_container, bg=self.colors['bg_dark'])
+        self.screens['trends'] = screen
+
+        # ── Header ──────────────────────────────────────────────
+        header = tk.Frame(screen, bg=self.colors['bg_dark'], pady=20)
+        header.pack(fill='x', padx=20)
+        ttk.Label(header, text="Tendencias Temporales de Seguridad",
+                  style='DarkTitle.TLabel').pack(side='left')
+
+        # ── Controles superiores ─────────────────────────────────
+        ctrl = tk.Frame(screen, bg=self.colors['bg_dark'])
+        ctrl.pack(fill='x', padx=20, pady=(0, 8))
+
+        tk.Label(ctrl, text="Ventana de análisis:",
+                 bg=self.colors['bg_dark'], fg=self.colors['text'],
+                 font=('Segoe UI', 10)).pack(side='left', padx=(0, 8))
+
+        self.trend_days_var = tk.StringVar(value='30')
+        days_cb = ttk.Combobox(ctrl, textvariable=self.trend_days_var,
+                               values=['7', '14', '30', '60', '90'],
+                               state='readonly', width=6)
+        days_cb.pack(side='left', padx=(0, 12))
+
+        # Selector de serie a mostrar
+        tk.Label(ctrl, text="Serie:",
+                 bg=self.colors['bg_dark'], fg=self.colors['text'],
+                 font=('Segoe UI', 10)).pack(side='left', padx=(0, 8))
+
+        self.trend_series_var = tk.StringVar(value='Todas')
+        series_cb = ttk.Combobox(
+            ctrl,
+            textvariable=self.trend_series_var,
+            values=['Todas', 'Amenazas por día', 'Commits sospechosos/semana', 'Evolución de riesgo'],
+            state='readonly', width=28)
+        series_cb.pack(side='left', padx=(0, 12))
+
+        tk.Button(ctrl, text='🔄 Actualizar',
+                  bg=self.colors['accent'], fg=self.colors['bg_dark'],
+                  font=('Segoe UI', 9, 'bold'), bd=0, padx=14, pady=6,
+                  cursor='hand2',
+                  command=self.update_trend_chart).pack(side='left')
+
+        # ── Área del gráfico ─────────────────────────────────────
+        self.trend_chart_frame = tk.LabelFrame(
+            screen, text=' 📈 Línea Temporal de Amenazas ',
+            bg=self.colors['bg_dark'], fg=self.colors['accent'],
+            font=('Segoe UI', 10, 'bold'), padx=8, pady=8)
+        self.trend_chart_frame.pack(fill='both', expand=True, padx=20, pady=6)
+
+        # ── KPI bar de resumen ────────────────────────────────────
+        self.trend_kpi_frame = tk.Frame(screen, bg=self.colors['bg_dark'])
+        self.trend_kpi_frame.pack(fill='x', padx=20, pady=(0, 12))
+
+        self.trend_kpi_labels = {}
+        kpis = [
+            ('AMENAZAS (período)', 'amenazas',   self.colors['critical']),
+            ('COMMITS SOSPECHOSOS','sospechosos', self.colors['high']),
+            ('RIESGO PROMEDIO',    'riesgo',      self.colors['medium']),
+            ('PICO DE RIESGO',     'pico',        self.colors['accent']),
+        ]
+        for label, key, color in kpis:
+            card = tk.Frame(self.trend_kpi_frame, bg='#24273a', padx=16, pady=10)
+            card.pack(side='left', expand=True, fill='both', padx=5)
+            tk.Label(card, text=label, bg='#24273a',
+                     font=('Segoe UI', 8, 'bold'), fg=color).pack()
+            lbl = tk.Label(card, text='—', bg='#24273a',
+                           font=('Segoe UI', 18, 'bold'), fg=self.colors['text'])
+            lbl.pack()
+            self.trend_kpi_labels[key] = lbl
+
+        # Carga inicial al construir
+        self.root.after(500, self.update_trend_chart)
+
+    def update_trend_chart(self):
+        """Obtiene datos de BD y renderiza el line chart de tendencias"""
+        try:
+            days = int(self.trend_days_var.get())
+        except ValueError:
+            days = 30
+
+        try:
+            data = db_manager.get_temporal_trend_data(days=days)
+            self.render_trend_chart(data, days)
+        except Exception as e:
+            for w in self.trend_chart_frame.winfo_children():
+                w.destroy()
+            tk.Label(self.trend_chart_frame,
+                     text=f"⚠️  Error cargando datos:\n{e}",
+                     bg=self.colors['bg_dark'], fg=self.colors['critical'],
+                     font=('Segoe UI', 10), justify='center').pack(expand=True)
+
+    def render_trend_chart(self, data: dict, days: int):
+        """
+        Renderiza el Line Chart en el frame de tendencias.
+
+        Args:
+            data: dict retornado por db_manager.get_temporal_trend_data()
+            days: ventana de días seleccionada (para el título)
+        """
+        import matplotlib.dates as mdates
+        from matplotlib.lines import Line2D
+
+        df_threats    = data['threats_per_day']
+        df_suspicious = data['suspicious_per_week']
+        df_risk       = data['risk_evolution']
+
+        # Actualizar KPIs de resumen
+        total_amenazas  = int(df_threats['total_amenazas'].sum())  if not df_threats.empty    else 0
+        total_sosp      = int(df_suspicious['sospechosos'].sum())  if not df_suspicious.empty else 0
+        avg_risk        = df_risk['riesgo_promedio'].mean()         if not df_risk.empty       else 0.0
+        max_risk        = df_risk['riesgo_maximo'].max()            if not df_risk.empty       else 0.0
+
+        self.trend_kpi_labels['amenazas'].config(text=str(total_amenazas))
+        self.trend_kpi_labels['sospechosos'].config(text=str(total_sosp))
+        self.trend_kpi_labels['riesgo'].config(text=f"{avg_risk:.2f}")
+        self.trend_kpi_labels['pico'].config(text=f"{max_risk:.2f}")
+
+        # ── Limpiar frame ──────────────────────────────────────────
+        for widget in self.trend_chart_frame.winfo_children():
+            widget.destroy()
+
+        serie = self.trend_series_var.get()
+
+        # Determinar cuántos subplots mostrar
+        show_threats    = serie in ('Todas', 'Amenazas por día')
+        show_suspicious = serie in ('Todas', 'Commits sospechosos/semana')
+        show_risk       = serie in ('Todas', 'Evolución de riesgo')
+
+        n_plots = sum([show_threats, show_suspicious, show_risk])
+        if n_plots == 0:
+            n_plots = 1  # fallback
+
+        plt.rcParams.update({
+            'figure.facecolor': self.colors['bg_dark'],
+            'axes.facecolor':   '#1a1a2e',
+            'axes.edgecolor':   '#444466',
+            'axes.labelcolor':  self.colors['text'],
+            'xtick.color':      self.colors['text'],
+            'ytick.color':      self.colors['text'],
+            'text.color':       self.colors['text'],
+            'grid.color':       '#2a2a4a',
+            'grid.linestyle':   '--',
+            'grid.alpha':       0.5,
+        })
+
+        fig, axes = plt.subplots(
+            n_plots, 1,
+            figsize=(11, 3.2 * n_plots),
+            dpi=96,
+            sharex=False
+        )
+        fig.patch.set_facecolor(self.colors['bg_dark'])
+        if n_plots == 1:
+            axes = [axes]   # siempre iterable
+
+        ax_idx = 0
+
+        # ── 1. Amenazas por día ────────────────────────────────────
+        if show_threats:
+            ax = axes[ax_idx]; ax_idx += 1
+            if not df_threats.empty:
+                df_threats['fecha'] = pd.to_datetime(df_threats['fecha'])
+                ax.fill_between(df_threats['fecha'], df_threats['total_amenazas'],
+                                alpha=0.18, color=self.colors['critical'])
+                ax.plot(df_threats['fecha'], df_threats['total_amenazas'],
+                        color=self.colors['critical'], lw=2.2, marker='o', markersize=4,
+                        label='Total amenazas')
+                ax.plot(df_threats['fecha'], df_threats['criticas'],
+                        color='#ff6b6b', lw=1.4, linestyle='--', marker='s', markersize=3,
+                        label='Críticas')
+                ax.plot(df_threats['fecha'], df_threats['altas'],
+                        color=self.colors['high'], lw=1.4, linestyle=':', marker='^', markersize=3,
+                        label='Altas')
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            else:
+                ax.text(0.5, 0.5, 'Sin datos en el período seleccionado',
+                        ha='center', va='center', transform=ax.transAxes,
+                        color=self.colors['text'], fontsize=11)
+
+            ax.set_title(f'Amenazas detectadas por día  (últimos {days} días)',
+                         color=self.colors['accent'], fontsize=11, fontweight='bold', pad=10)
+            ax.set_ylabel('Nº amenazas', fontsize=9)
+            ax.legend(loc='upper left', fontsize=8,
+                      facecolor='#1a1a2e', edgecolor=self.colors['accent'],
+                      labelcolor=self.colors['text'])
+            ax.grid(True)
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right')
+
+        # ── 2. Commits sospechosos por semana ──────────────────────
+        if show_suspicious:
+            ax = axes[ax_idx]; ax_idx += 1
+            if not df_suspicious.empty:
+                df_suspicious['semana'] = pd.to_datetime(df_suspicious['semana'])
+                ax.fill_between(df_suspicious['semana'], df_suspicious['total_commits'],
+                                alpha=0.12, color=self.colors['accent'])
+                ax.plot(df_suspicious['semana'], df_suspicious['total_commits'],
+                        color=self.colors['accent'], lw=2, linestyle='-', marker='o', markersize=4,
+                        label='Total commits')
+                ax.fill_between(df_suspicious['semana'], df_suspicious['sospechosos'],
+                                alpha=0.25, color=self.colors['high'])
+                ax.plot(df_suspicious['semana'], df_suspicious['sospechosos'],
+                        color=self.colors['high'], lw=2.2, linestyle='-', marker='D', markersize=5,
+                        label='Sospechosos 🚩')
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('Sem %d/%m'))
+                ax.xaxis.set_major_locator(mdates.WeekdayLocator())
+            else:
+                ax.text(0.5, 0.5, 'Sin datos en el período seleccionado',
+                        ha='center', va='center', transform=ax.transAxes,
+                        color=self.colors['text'], fontsize=11)
+
+            ax.set_title(f'Commits sospechosos por semana  (últimos {days} días)',
+                         color=self.colors['accent'], fontsize=11, fontweight='bold', pad=10)
+            ax.set_ylabel('Nº commits', fontsize=9)
+            ax.legend(loc='upper left', fontsize=8,
+                      facecolor='#1a1a2e', edgecolor=self.colors['accent'],
+                      labelcolor=self.colors['text'])
+            ax.grid(True)
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right')
+
+        # ── 3. Evolución del riesgo ────────────────────────────────
+        if show_risk:
+            ax = axes[ax_idx]; ax_idx += 1
+            if not df_risk.empty:
+                df_risk['fecha'] = pd.to_datetime(df_risk['fecha'])
+
+                # Zona de riesgo crítico (> 0.7)
+                ax.axhspan(0.7, 1.0, alpha=0.08, color=self.colors['critical'],
+                           label='Zona crítica (>0.7)')
+                # Zona de riesgo medio (0.4–0.7)
+                ax.axhspan(0.4, 0.7, alpha=0.06, color=self.colors['high'],
+                           label='Zona media (0.4–0.7)')
+
+                ax.fill_between(df_risk['fecha'], df_risk['riesgo_promedio'],
+                                alpha=0.2, color=self.colors['success'])
+                ax.plot(df_risk['fecha'], df_risk['riesgo_promedio'],
+                        color=self.colors['success'], lw=2.2, marker='o', markersize=4,
+                        label='Riesgo promedio')
+                ax.plot(df_risk['fecha'], df_risk['riesgo_maximo'],
+                        color=self.colors['medium'], lw=1.5, linestyle='--', marker='v', markersize=3,
+                        label='Riesgo máximo')
+                ax.set_ylim(0, 1.05)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            else:
+                ax.text(0.5, 0.5, 'Sin datos en el período seleccionado',
+                        ha='center', va='center', transform=ax.transAxes,
+                        color=self.colors['text'], fontsize=11)
+
+            ax.set_title(f'Evolución del riesgo  (últimos {days} días)',
+                         color=self.colors['accent'], fontsize=11, fontweight='bold', pad=10)
+            ax.set_ylabel('Risk Score (0–1)', fontsize=9)
+            ax.legend(loc='upper left', fontsize=8,
+                      facecolor='#1a1a2e', edgecolor=self.colors['accent'],
+                      labelcolor=self.colors['text'])
+            ax.grid(True)
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='right')
+
+        plt.tight_layout(pad=2.0)
+
+        canvas = FigureCanvasTkAgg(fig, master=self.trend_chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+        plt.close(fig)
+
+        self.update_status(f"Tendencias actualizadas — últimos {days} días")
 
     def create_ml_screen(self):
         """Crea la pantalla de Inteligencia Artificial"""
